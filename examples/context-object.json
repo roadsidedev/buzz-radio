@@ -1,0 +1,148 @@
+{
+  "_comment": "Example context object passed into a segment prompt during Evening block.",
+  "_note": "All news items have been editorially transformed. Raw API data never appears here.",
+
+  "block": "evening",
+  "hour": 20,
+  "day_of_week": "Wednesday",
+
+  "news": [
+    {
+      "id": "story-001",
+      "headline": "Fed hikes rates again",
+      "radio_copy": "The Fed just moved again — another twenty-five basis point hike. Inflation apparently hasn't gotten the memo. Your mortgage just got a little more painful.",
+      "energy": "important",
+      "talking_points": ["Has the Fed gone too far?", "What does this mean for borrowing costs?"],
+      "impact": "high",
+      "freshness": 0.85,
+      "freshness_framing": "",
+      "used": false
+    },
+    {
+      "id": "story-002",
+      "headline": "EU advances AI liability bill",
+      "radio_copy": "Brussels is moving fast on AI. Parliament voted to advance a bill that would make AI companies legally responsible for harm their models cause. Still developing — but if it passes, every major tech company operating in Europe is looking at a fundamentally different risk environment.",
+      "energy": "important",
+      "talking_points": ["How 'harm' gets defined is the whole fight", "Lobbying implications", "US vs EU regulatory divergence"],
+      "impact": "high",
+      "freshness": 0.9,
+      "freshness_framing": "",
+      "used": false
+    },
+    {
+      "id": "story-003",
+      "headline": "Social platform whistleblower alleges algorithm boosted divisive content",
+      "radio_copy": "A whistleblower inside one of the major platforms dropped a document today alleging the engagement algorithm was deliberately tuned for divisive content — even after internal research flagged the harm. Document is being verified. If it holds, this is the story of the week.",
+      "energy": "shocking",
+      "talking_points": ["Internal research vs public claims", "Platform accountability", "What happens to the whistleblower"],
+      "impact": "high",
+      "freshness": 1.0,
+      "freshness_framing": "",
+      "used": false,
+      "flag_for_deep_dive": true
+    },
+    {
+      "id": "story-004",
+      "headline": "Streaming wars heat up with surprise acquisition",
+      "radio_copy": "One of the mid-tier streamers just got swallowed up. Consolidation in streaming is happening faster than most analysts predicted and the content library implications are genuinely interesting.",
+      "energy": "fun",
+      "talking_points": ["Content library overlap", "What this means for subscribers", "Is consolidation good?"],
+      "impact": "medium",
+      "freshness": 0.75,
+      "freshness_framing": "",
+      "used": false
+    }
+  ],
+
+  "crypto": {
+    "bitcoin":  { "usd": 71500, "usd_24h_change": 8.3 },
+    "ethereum": { "usd": 3820,  "usd_24h_change": 5.1 },
+    "solana":   { "usd": 178,   "usd_24h_change": 12.4 },
+    "sui":      { "usd": 3.42,  "usd_24h_change": -2.1 },
+    "trending": ["PEPE", "WIF", "JUP"],
+    "market_cap_change_24h": 6.8,
+    "_note": "SOL up 12.4% — CRYPTO_SURGE trigger checked but did not fire (threshold is 10%, SOL qualifies but not BTC/ETH)",
+    "surge_active": false
+  },
+
+  "scores": {
+    "nba": [
+      {
+        "home": "BOS",
+        "away": "GSW",
+        "home_score": 108,
+        "away_score": 97,
+        "status": "Q4 3:42",
+        "is_finals": true
+      }
+    ],
+    "nfl": [],
+    "soccer": [
+      {
+        "home": "Arsenal",
+        "away": "Man City",
+        "home_score": 1,
+        "away_score": 2,
+        "status": "FT"
+      }
+    ]
+  },
+
+  "weather": {
+    "temp": 68,
+    "description": "partly cloudy",
+    "city": "New York"
+  },
+
+  "social_pulse": [
+    "Is anyone else watching this NBA Finals game or is it just me",
+    "The EU AI bill is going to break every startup that breathed near a model",
+    "SOL up 12% and the timeline has completely lost its mind",
+    "Whoever greenlit that streaming merger deserves an award or a prison sentence"
+  ],
+
+  "participant_count": 7,
+  "known_participants": {
+    "user-abc": {
+      "name": "mk_dev",
+      "first_seen": 1716000000,
+      "times_seen": 1,
+      "total_tips": 0,
+      "questions_asked": 0,
+      "greeted": false
+    },
+    "user-def": {
+      "name": "cryptoray",
+      "first_seen": 1715990000,
+      "times_seen": 8,
+      "total_tips": 25.0,
+      "questions_asked": 3,
+      "greeted": true,
+      "is_vip": true
+    }
+  },
+  "pending_joins": ["mk_dev"],
+  "pending_tips": [],
+  "pending_questions": [],
+
+  "session_callbacks": [
+    {
+      "type": "bit",
+      "content": "Dex's fake beef with the Solana Foundation this session",
+      "speaker": "Dex",
+      "segment": "COLD_OPEN",
+      "call_back_in": "DEX_CORNER"
+    }
+  ],
+  "aired_headlines": ["story-005", "story-006"],
+  "last_segment": "COLD_OPEN",
+  "segment_history": ["COLD_OPEN"],
+
+  "last_updated": {
+    "news":   1716003200,
+    "crypto": 1716003600,
+    "scores": 1716003400,
+    "weather": 1716000000,
+    "social":  1716003000
+  }
+}

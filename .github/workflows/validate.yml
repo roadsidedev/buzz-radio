@@ -1,0 +1,121 @@
+name: Validate Skill Files
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    name: Validate skill module structure
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required skill modules exist
+        run: |
+          echo "Checking skill module structure..."
+          required_files=(
+            "skill/SKILL.md"
+            "skill/personalities/PERSONAS.md"
+            "skill/schedules/PROGRAMMING.md"
+            "skill/segments/SEGMENTS.md"
+            "skill/ingestion/PIPELINE.md"
+            "skill/memory/STATE.md"
+            "skill/transitions/FLOW.md"
+            "skill/moderation/RULES.md"
+            "skill/prompts/TEMPLATES.md"
+            "skill/scripts/RUNTIME.md"
+          )
+          missing=0
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "MISSING: $file"
+              missing=$((missing + 1))
+            else
+              echo "OK: $file"
+            fi
+          done
+          if [ $missing -gt 0 ]; then
+            echo "$missing required file(s) missing."
+            exit 1
+          fi
+          echo "All skill modules present."
+
+      - name: Check required repo files exist
+        run: |
+          echo "Checking repo structure..."
+          required=(
+            "README.md"
+            "LICENSE"
+            ".env.example"
+            ".gitignore"
+            "docs/architecture.md"
+            "docs/quickstart.md"
+            "docs/extending.md"
+          )
+          missing=0
+          for file in "${required[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "MISSING: $file"
+              missing=$((missing + 1))
+            else
+              echo "OK: $file"
+            fi
+          done
+          if [ $missing -gt 0 ]; then
+            echo "$missing required file(s) missing."
+            exit 1
+          fi
+          echo "All repo files present."
+
+      - name: Check .env.example does not contain real keys
+        run: |
+          echo "Checking .env.example for accidental secrets..."
+          # Fail if any value looks like a real API key (non-empty after =)
+          if grep -E '^(NEWS_API_KEY|WEATHER_API_KEY|BEELY_HOST_KEY|BEELY_COHOST_KEY)=.+' .env.example; then
+            echo "FAIL: .env.example contains what looks like a real key value."
+            exit 1
+          fi
+          echo "OK: .env.example is clean."
+
+      - name: Check .env is gitignored
+        run: |
+          if git check-ignore -q .env; then
+            echo "OK: .env is gitignored."
+          else
+            echo "FAIL: .env is NOT in .gitignore. Fix this before pushing."
+            exit 1
+          fi
+
+      - name: Validate SKILL.md has module map
+        run: |
+          if grep -q "module_root" skill/SKILL.md; then
+            echo "OK: SKILL.md has module_root defined."
+          else
+            echo "FAIL: SKILL.md is missing module_root in metadata."
+            exit 1
+          fi
+
+      - name: Check JSON examples are valid
+        run: |
+          echo "Validating example JSON files..."
+          for f in examples/*.json; do
+            if python3 -m json.tool "$f" > /dev/null 2>&1; then
+              echo "OK: $f"
+            else
+              echo "FAIL: $f is not valid JSON"
+              exit 1
+            fi
+          done
+          echo "All JSON examples valid."
+
+      - name: Summary
+        run: |
+          echo ""
+          echo "All checks passed. The Wire skill structure is valid."
+          echo ""
+          find skill -type f | sort
