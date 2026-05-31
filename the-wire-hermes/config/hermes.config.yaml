@@ -1,0 +1,527 @@
+# hermes.config.yaml
+# The Wire Radio — Hermes Agent Configuration
+# Platform: Buzz (Agent-First Live Audio)
+# Runtime: Hermes Agent Framework
+
+agent:
+  name: "the-wire-broadcast"
+  display_name: "The Wire — Broadcast Director"
+  version: "1.0.0"
+  mode: "autonomous"
+  uptime: "24/7"
+  restart_on_failure: true
+  failure_backoff_seconds: 30
+  max_restart_attempts: -1  # Infinite. The show does not stop.
+
+# ─────────────────────────────────────────────
+# MODEL CONFIGURATION
+# ─────────────────────────────────────────────
+model:
+  # Primary model: fast, high quality, for live broadcast segments
+  primary: "claude-sonnet-4-6"
+  
+  # Fallback if primary is rate-limited or fails
+  fallback: "claude-haiku-4-5-20251001"
+  
+  # Use primary for: segment content, host dialogue, editorial transforms
+  # Use fallback for: data ingestion transforms, quick pun checks, audience parsing
+  
+  routing:
+    segment_content: primary
+    host_zara: primary
+    host_dex: primary
+    editorial_transform: primary
+    audience_parse: fallback
+    data_summary: fallback
+    pun_generation: primary  # Dex deserves full model
+
+  # Temperature settings per task type
+  temperature:
+    segment_content: 0.85      # Expressive, varied delivery
+    host_dialogue: 0.90        # Max character variance
+    editorial_transform: 0.70  # Consistent but not dry
+    data_summary: 0.40         # Accurate and consistent
+    recovery_content: 0.95     # Maximum creativity for dead air
+
+  max_tokens:
+    segment_turn: 800          # Max per host message
+    transition: 200            # Keep them tight
+    data_transform: 400        # Radio copy is punchy
+    audience_response: 300     # Don't ramble at listeners
+
+# ─────────────────────────────────────────────
+# PLATFORM: BUZZ
+# ─────────────────────────────────────────────
+platform:
+  name: "buzz"
+  base_url: "https://beely-live.vercel.app"
+  
+  credentials:
+    # IMPORTANT: Auto-populated on first BOOT. Do not set manually.
+    host_key: "${BUZZ_HOST_KEY}"
+    cohost_key: "${BUZZ_COHOST_KEY}"
+    host_agent_id: "${BUZZ_HOST_AGENT_ID}"
+    cohost_agent_id: "${BUZZ_COHOST_AGENT_ID}"
+  
+  room:
+    # Room lifecycle: 6 hours, then graceful HANDOFF
+    lifecycle_hours: 6
+    auto_rotate: true
+    
+    # Room title template — updated each rotation
+    title_template: "The Wire 📻 {time_block} | Live Now"
+    
+    # Room tags for discoverability
+    tags:
+      - "crypto"
+      - "news"
+      - "culture"
+      - "sports"
+      - "live"
+    
+    handoff_copy_template: >
+      "That's a wrap on this session of The Wire.
+      We're moving rooms — don't touch that dial.
+      Same energy, new room. Zara and Dex, back in 60 seconds."
+
+  api:
+    post_message_endpoint: "/api/rooms/{room_id}/messages"
+    room_create_endpoint: "/api/rooms/create"
+    room_close_endpoint: "/api/rooms/{room_id}/close"
+    audience_endpoint: "/api/rooms/{room_id}/audience"
+    tips_endpoint: "/api/rooms/{room_id}/tips"
+    
+    retry_attempts: 3
+    retry_delay_ms: 1000
+    timeout_ms: 8000
+
+# ─────────────────────────────────────────────
+# BROADCAST LOOP
+# ─────────────────────────────────────────────
+broadcast:
+  # The heartbeat of the show
+  loop_interval_seconds: 45     # Check state + continue segment every 45s
+  
+  # Dead air detection
+  max_silence_seconds: 90       # Invariant #1. Hard limit.
+  silence_trigger: "RECOVERY"   # State to enter if silence detected
+  
+  # Segment timing
+  segment_min_seconds: 120      # No segment shorter than 2 min
+  segment_max_seconds: 480      # No segment longer than 8 min (except Deep Dive)
+  deep_dive_max_seconds: 720    # Deep Dive exception: 12 min max
+  
+  # Energy management (Invariant #3)
+  energy_reset_interval_seconds: 240  # Every 4 minutes of dense content
+  
+  # Audience acknowledgment (Invariant #4)
+  audience_ack_cooldown_seconds: 180  # Max 1 ack per 3 minutes
+
+# ─────────────────────────────────────────────
+# BROADCAST STATE MACHINE
+# ─────────────────────────────────────────────
+states:
+  initial: "BOOT"
+  
+  BOOT:
+    description: "Cold start. Register hosts. Fetch data. Detect time block. Open room."
+    max_duration_seconds: 120
+    transitions_to:
+      success: "LIVE"
+      failure: "RECOVERY"
+  
+  LIVE:
+    description: "Normal broadcast. Segment running."
+    transitions_to:
+      segment_complete: "TRANSITION"
+      breaking_news: "BREAKING"
+      audience_surge: "AUDIENCE_HOT"
+      dead_air: "RECOVERY"
+      room_lifecycle_end: "HANDOFF"
+      hour_is_midnight: "NIGHT_MODE"
+  
+  TRANSITION:
+    description: "Between segments. Max 45 seconds."
+    max_duration_seconds: 45
+    transitions_to:
+      next_segment_ready: "LIVE"
+      failure: "RECOVERY"
+  
+  BREAK:
+    description: "Music/ambient pause. Max 90 seconds."
+    max_duration_seconds: 90
+    transitions_to:
+      break_over: "LIVE"
+      dead_air: "RECOVERY"
+  
+  BREAKING:
+    description: "Breaking news interrupt. Zara leads."
+    voice_authority: "zara"
+    transitions_to:
+      story_complete: "LIVE"
+      story_ongoing: "BREAKING"  # Can loop
+  
+  RECOVERY:
+    description: "Dead air or failure detected. Emergency content. No acknowledgment of gap."
+    no_break_character: true
+    transitions_to:
+      content_loaded: "LIVE"
+  
+  HANDOFF:
+    description: "6-hour room lifecycle end. Open new room. Continuity copy."
+    max_duration_seconds: 90
+    transitions_to:
+      new_room_open: "LIVE"
+      failure: "RECOVERY"
+  
+  AUDIENCE_HOT:
+    description: "High listener count. Elevated interaction mode."
+    energy_ceiling: "maximum"
+    transitions_to:
+      audience_normalizes: "LIVE"
+      breaking_news: "BREAKING"
+  
+  NIGHT_MODE:
+    description: "12am–6am. Slower pace. Deeper takes. Intimate register."
+    active_hours: "00:00-06:00"
+    energy_profile: "low"
+    transitions_to:
+      morning_rush: "LIVE"
+      dead_air: "RECOVERY"
+
+# ─────────────────────────────────────────────
+# TIME BLOCKS
+# ─────────────────────────────────────────────
+schedule:
+  time_blocks:
+    morning_rush:
+      hours: "06:00-10:00"
+      energy: "high"
+      pacing: "fast"
+      segment_duration_multiplier: 0.85  # Shorter segments, more movement
+      priority_content: ["headlines", "crypto_morning", "sports_overnight"]
+    
+    midday:
+      hours: "10:00-17:00"
+      energy: "medium-high"
+      pacing: "moderate"
+      segment_duration_multiplier: 1.0
+      priority_content: ["deep_dive", "culture", "listener_corner"]
+    
+    evening:
+      hours: "17:00-00:00"
+      energy: "high"
+      pacing: "dynamic"
+      segment_duration_multiplier: 1.1  # More space for big takes
+      priority_content: ["commentary", "sports_live", "crypto_markets"]
+    
+    night_shift:
+      hours: "00:00-06:00"
+      energy: "low"
+      pacing: "slow"
+      segment_duration_multiplier: 1.5  # Longer, deeper
+      priority_content: ["deep_dive", "commentary", "culture"]
+  
+  # Hourly segment rotation
+  # 60-minute cycle:
+  hourly_segments:
+    - name: "cold_open"
+      duration_minutes: 3
+      voice_authority: "zara"
+      
+    - name: "headlines"
+      duration_minutes: 7
+      voice_authority: "both"
+      data_required: ["news", "crypto", "sports"]
+      
+    - name: "deep_dive"
+      duration_minutes: 10
+      voice_authority: "both"
+      data_required: ["news_top_story"]
+      
+    - name: "dex_corner"
+      duration_minutes: 6
+      voice_authority: "dex"
+      
+    - name: "banter"
+      duration_minutes: 4
+      voice_authority: "both"
+      no_data_required: true
+      
+    - name: "culture"
+      duration_minutes: 6
+      voice_authority: "both"
+      data_required: ["farcaster", "culture_news"]
+      
+    - name: "music_break"
+      duration_minutes: 3
+      state: "BREAK"
+      
+    - name: "second_headlines"
+      duration_minutes: 5
+      voice_authority: "both"
+      data_required: ["news_refresh"]
+      
+    - name: "listener_corner"
+      duration_minutes: 5
+      voice_authority: "zara"
+      requires: "audience_queue"
+      
+    - name: "commentary"
+      duration_minutes: 5
+      voice_authority: "both"
+      format: "opinion_segment"
+      
+    - name: "speed_round"
+      duration_minutes: 4
+      voice_authority: "dex"
+      format: "rapid_fire"
+      
+    - name: "sign_off"
+      duration_minutes: 2
+      voice_authority: "zara"
+
+# ─────────────────────────────────────────────
+# DATA PIPELINE
+# ─────────────────────────────────────────────
+data:
+  sources:
+    news:
+      provider: "newsapi"
+      api_key: "${NEWS_API_KEY}"
+      refresh_minutes: 30
+      categories: ["general", "technology", "entertainment", "business", "sports"]
+      transform_to: "radio_copy"
+      freshness_score_decay_hours: 2
+    
+    crypto:
+      provider: "coingecko"
+      api_key: null  # Keyless
+      refresh_minutes: 15
+      assets: ["bitcoin", "ethereum", "solana", "top_20_by_volume"]
+      include: ["price", "24h_change", "trending"]
+      transform_to: "radio_copy"
+    
+    sports:
+      provider: "espn_unofficial"
+      api_key: null  # Keyless
+      refresh_minutes: 20
+      leagues: ["nba", "nfl", "soccer"]
+      include: ["scores", "highlights", "upcoming"]
+      transform_to: "radio_copy"
+    
+    weather:
+      provider: "openweathermap"
+      api_key: "${WEATHER_API_KEY}"
+      required: false  # Optional
+      refresh_minutes: 60
+      city: "${SHOW_CITY}"
+      use_for: "locale_flavor"
+    
+    farcaster:
+      provider: "warpcast"
+      api_key: null  # Keyless
+      refresh_minutes: 20
+      fetch: ["trending_casts", "trending_channels", "social_pulse"]
+      transform_to: "radio_copy"
+  
+  # Editorial transform rules
+  transform:
+    rule: "Never broadcast raw API output"
+    format: "radio_copy"
+    radio_copy_spec:
+      - "Lead with the angle, not the number"
+      - "One sentence setup, one sentence position"
+      - "Include one hook or tension point per story"
+      - "No jargon without translation"
+      - "Max 3 data points per story beat"
+    
+    freshness:
+      score_threshold: 0.4      # Below this: story is stale, skip it
+      age_penalty_per_hour: 0.1 # Score degrades over time
+      breaking_news_score: 1.0  # Always fresh
+
+# ─────────────────────────────────────────────
+# MEMORY ARCHITECTURE
+# ─────────────────────────────────────────────
+memory:
+  layers:
+    rolling:
+      description: "Segment-level context. What was just said."
+      scope: "current_segment"
+      max_tokens: 2000
+      auto_clear: "on_segment_change"
+    
+    session:
+      description: "6-hour room context. What happened this room."
+      scope: "current_room"
+      max_tokens: 8000
+      auto_clear: "on_room_handoff"
+      persist_to: "handoff_summary"
+      
+      tracks:
+        - stories_covered          # Don't repeat yourself
+        - listeners_acknowledged   # Who got shoutouts
+        - dex_pun_count            # Enforce 2/hr cap
+        - tips_received            # Who tipped and when
+        - topics_hit               # Pillar coverage tracking
+        - energy_resets_done       # Invariant #3 enforcement
+        - current_state            # Broadcast state
+        - current_segment          # What's running
+        - segment_start_time       # For duration enforcement
+    
+    persistent:
+      description: "Cross-restart identity. Who The Wire is."
+      scope: "all_time"
+      max_tokens: 4000
+      storage: "file"
+      path: "./memory/persistent.json"
+      
+      tracks:
+        - station_lore             # Running callbacks, show history
+        - recurring_listeners      # VIP audience members
+        - running_debates          # Multi-session ongoing arguments
+        - editorial_positions      # Established show takes on topics
+        - show_milestones          # First week, 100th episode, etc.
+  
+  # Callback engine: things to bring back later
+  callbacks:
+    max_pending: 20
+    types:
+      - "promised_follow_up"       # "We'll check on this later"
+      - "listener_question"        # Queued but not yet aired
+      - "story_developing"         # Breaking news with updates expected
+      - "dex_bet"                  # Ongoing sports/crypto predictions
+
+# ─────────────────────────────────────────────
+# AUDIENCE LAYER
+# ─────────────────────────────────────────────
+audience:
+  join_detection: true
+  tip_detection: true
+  question_queue: true
+  
+  join_handling:
+    cooldown_seconds: 180         # Invariant #4: max 1 ack per 3 min
+    vip_override: true            # Known VIP listeners get acknowledged regardless
+    threshold_for_ack: "notable"  # Not every join. Notable joins.
+    
+    what_makes_notable:
+      - "First time listener today"
+      - "Known recurring listener"
+      - "Listener who tipped previously"
+      - "High join-count session (many new people at once)"
+  
+  tips:
+    ceremony_required: true
+    min_ceremony_length_seconds: 15
+    max_ceremony_length_seconds: 45
+    personalize: true              # Reference tipper by name/handle
+  
+  questions:
+    queue_max: 10
+    answer_during: ["listener_corner", "banter"]
+    skip_if: "question is unanswerable or off-brand"
+  
+  vip_tracking:
+    store_in: "persistent_memory"
+    vip_criteria:
+      - "Tipped 3+ times"
+      - "Regular listener across sessions"
+      - "Community builder / known on Farcaster"
+
+# ─────────────────────────────────────────────
+# SPECIAL PROGRAMMING TRIGGERS
+# ─────────────────────────────────────────────
+triggers:
+  breaking_news:
+    condition: "news_freshness_score > 0.9 AND story_not_covered"
+    interrupt_segment: true
+    voice_authority: "zara"
+    max_duration_minutes: 8
+    min_significance: "major"     # Don't interrupt for small stuff
+  
+  crypto_surge:
+    condition: "any_asset_24h_change > 15 OR < -15"
+    interrupt_segment: false      # Wait for next natural break
+    voice_authority: "dex"
+    segment: "dex_corner"
+  
+  big_game:
+    condition: "live_major_game_detected"
+    programming: "sports_heavy_rotation"
+    voice_authority: "dex"
+    increase_sports_segments: true
+  
+  high_audience:
+    condition: "listener_count > normal_session_peak * 1.5"
+    state_transition: "AUDIENCE_HOT"
+    energy_ceiling: "maximum"
+    interaction_elevation: true
+  
+  farcaster_trending:
+    condition: "farcaster_cast_virality_score > 0.8"
+    segment_eligible: ["culture", "banter", "listener_corner"]
+
+# ─────────────────────────────────────────────
+# CONTENT MODERATION
+# ─────────────────────────────────────────────
+moderation:
+  # What The Wire never broadcasts
+  blocked:
+    - "Financial advice (buy/sell specific assets)"
+    - "Malicious targeting of named individuals"
+    - "Political content that damages vulnerable groups"
+    - "Explicit content"
+    - "Listener information shared without their initiation"
+  
+  # What The Wire always does
+  enforced:
+    - "Crypto commentary includes disclaimer on speculation, once per session minimum"
+    - "Sports predictions are labeled as takes, not facts"
+    - "Breaking news is labeled until confirmed"
+  
+  # Character safety
+  no_break_character:
+    - "Never reference being an AI"
+    - "Never say 'I cannot' or 'I don't have access'"
+    - "Never apologize for having opinions"
+    - "Never explain the show to the audience"
+
+# ─────────────────────────────────────────────
+# LOGGING & OBSERVABILITY
+# ─────────────────────────────────────────────
+logging:
+  level: "info"
+  log_to: "./logs/broadcast.log"
+  rotate_daily: true
+  
+  track:
+    - state_transitions
+    - segment_starts_and_ends
+    - data_refresh_events
+    - audience_events
+    - api_failures
+    - recovery_triggers
+    - pun_events             # For Dex quality control
+    - invariant_violations   # Should be zero
+
+# ─────────────────────────────────────────────
+# ENVIRONMENT
+# ─────────────────────────────────────────────
+env:
+  required:
+    - NEWS_API_KEY
+    - BUZZ_HOST_KEY         # Auto-populated on first boot
+    - BUZZ_COHOST_KEY       # Auto-populated on first boot
+    - BUZZ_HOST_AGENT_ID    # Auto-populated on first boot
+    - BUZZ_COHOST_AGENT_ID  # Auto-populated on first boot
+  
+  optional:
+    - WEATHER_API_KEY
+    - SHOW_CITY             # Default: "Global"
+  
+  defaults:
+    SHOW_CITY: "Global"
+    LOG_LEVEL: "info"
+    RECOVERY_TIMEOUT: 90

@@ -43,52 +43,69 @@ Two AI hosts. A full programming schedule. Real-time news, crypto, sports, and c
 ## Project Structure
 
 ```
-the-wire/
+buzz-radio/
 │
-├── README.md                    ← This file
-├── LICENSE                      ← MIT
-├── .env.example                 ← Environment variable template
+├── README.md                       ← This file
+├── LICENSE                         ← MIT
+├── .env.example                    ← Environment variable template
 ├── .gitignore
 │
-├── skill/                       ← The broadcast operating system
-│   ├── SKILL.md                 ← Orchestrator + boot sequence + invariants
-│   │
+├── skill/                          ← CANONICAL BROADCAST OS (all runtimes)
+│   ├── SKILL.md                    ← Orchestrator + boot sequence + invariants
 │   ├── personalities/
-│   │   └── PERSONAS.md          ← Zara + Dex full character specs + chemistry rules
-│   │
+│   │   └── PERSONAS.md             ← Zara + Dex full character specs + chemistry rules
 │   ├── schedules/
-│   │   └── PROGRAMMING.md       ← Time blocks, hourly segments, special triggers, energy arcs
-│   │
+│   │   └── PROGRAMMING.md          ← Time blocks, hourly segments, special triggers, energy arcs
 │   ├── segments/
-│   │   └── SEGMENTS.md          ← Per-segment goals, data needs, success/failure criteria
-│   │
+│   │   └── SEGMENTS.md             ← Per-segment goals, data needs, success/failure criteria
 │   ├── ingestion/
-│   │   └── PIPELINE.md          ← Data sources, editorial filter, transform layer, freshness scoring
-│   │
+│   │   └── PIPELINE.md             ← Data sources, editorial filter, transform layer, freshness scoring
 │   ├── memory/
-│   │   └── STATE.md             ← Broadcast state machine, 3-layer memory, callback engine
-│   │
+│   │   └── STATE.md                ← Broadcast state machine, 3-layer memory, callback engine
 │   ├── transitions/
-│   │   └── FLOW.md              ← Radio physics, pacing rules, transition patterns, dead air recovery
-│   │
+│   │   └── FLOW.md                 ← Radio physics, pacing rules, transition patterns, dead air recovery
 │   ├── moderation/
-│   │   └── RULES.md             ← Content constraints, audience handling, editorial standards
-│   │
+│   │   └── RULES.md                ← Content constraints, audience handling, editorial standards
 │   ├── prompts/
-│   │   └── TEMPLATES.md         ← LLM prompt templates for every segment type
-│   │
+│   │   └── TEMPLATES.md            ← LLM prompt templates for every segment type
 │   └── scripts/
-│       └── RUNTIME.md           ← Full executable pseudocode — the main loop
+│       └── RUNTIME.md              ← Full executable pseudocode — the main loop
+│
+├── the-wire-hermes/                ← HERMES-SPECIFIC RUNTIME
+│   ├── hermes.mount.md             ← Hermes entry point (mount this to start)
+│   ├── soul.md                     ← Station identity & philosophy
+│   ├── config/
+│   │   └── hermes.config.yaml      ← Full YAML runtime config (model routing, timing, state machine)
+│   ├── personalities/
+│   │   ├── zara-soul.md            ← Zara's Hermes-flavored character spec
+│   │   └── dex-soul.md             ← Dex's Hermes-flavored character spec
+│   ├── memory/
+│   │   └── MEMORY.md               ← Hermes 3-layer memory architecture
+│   ├── prompts/
+│   │   └── system-prompt.md        ← Hermes system prompt (synthesizes all modules)
+│   └── boot/
+│       └── BOOT.md                 ← Hermes cold-start / restart sequence
 │
 ├── docs/
-│   ├── architecture.md          ← System architecture deep-dive
-│   ├── quickstart.md            ← Get the station live in 5 minutes
-│   └── extending.md             ← How to add new segments, hosts, data sources
+│   ├── architecture.md             ← System architecture deep-dive
+│   ├── quickstart.md               ← Get the station live in 5 minutes
+│   ├── extending.md                ← How to add new segments, hosts, data sources
+│   └── hermes-integration.md       ← How Hermes connects to the canonical skill
 │
 └── examples/
-    ├── segment-transcript.md    ← Example of a full HEADLINES segment output
-    └── context-object.json      ← Example context object passed to segment prompts
+    ├── segment-transcript.md       ← Example of a full HEADLINES segment output
+    └── context-object.json         ← Example context object passed to segment prompts
 ```
+
+### Two-Layer Architecture
+
+| Layer | Location | Purpose |
+|-------|----------|---------|
+| **Canonical Skill** | `skill/` | Runtime-agnostic broadcast operating system. Defines WHAT the station does. Shared by Claude Code, Hermes, OpenClaw, and any future runtime. |
+| **Hermes Runtime** | `the-wire-hermes/` | Hermes-specific config. Defines HOW Hermes runs the station (boot, config, memory, system prompt). |
+
+**Edit `skill/`** when changing broadcast logic (segments, personalities, data pipeline, prompts).
+**Edit `the-wire-hermes/`** when changing Hermes-specific behavior (boot, YAML config, system prompt).
 
 ---
 
@@ -127,14 +144,14 @@ Beely credentials (`BEELY_HOST_KEY`, `BEELY_COHOST_KEY`, agent IDs) are **auto-p
 
 ### 3. Mount the skill
 
-**Claude Code:**
+**Claude Code** (uses canonical skill directly):
 ```bash
 claude --skill ./skill/SKILL.md
 ```
 
-**Hermes:**
+**Hermes** (uses the-wire-hermes entry point, which loads canonical skill + Hermes config):
 ```bash
-hermes skill mount ./skill/
+hermes skill mount ./the-wire-hermes/hermes.mount.md
 ```
 
 **OpenClaw / Miles:**
