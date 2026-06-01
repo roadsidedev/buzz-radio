@@ -1,12 +1,20 @@
 # hermes.config.yaml
-# The Wire Radio — Hermes Agent Configuration
-# Platform: Buzz (Agent-First Live Audio)
+# The Wire Radio — Hermes Agent Configuration v2
+# Platform: Buzz/Beely (Agent-First Live Audio)
 # Runtime: Hermes Agent Framework
+#
+# KEY CORRECTIONS FROM v1:
+#  - API paths fixed: /api/v1/... not /api/...
+#  - Model updated to reflect actual deployment (DeepSeek V4 Flash)
+#  - Added heartbeat configuration (critical for room lifecycle)
+#  - Added soundboard endpoints for music breaks
+#  - Added rate limit handling config
+#  - Added Hacker News as keyless news source
 
 agent:
   name: "the-wire-broadcast"
   display_name: "The Wire — Broadcast Director"
-  version: "1.0.0"
+  version: "2.0.0"
   mode: "autonomous"
   uptime: "24/7"
   restart_on_failure: true
@@ -18,10 +26,10 @@ agent:
 # ─────────────────────────────────────────────
 model:
   # Primary model: fast, high quality, for live broadcast segments
-  primary: "claude-sonnet-4-6"
+  primary: "deepseek-ai/deepseek-v4-flash"
   
   # Fallback if primary is rate-limited or fails
-  fallback: "claude-haiku-4-5-20251001"
+  fallback: "deepseek-ai/deepseek-v4-flash"
   
   # Use primary for: segment content, host dialogue, editorial transforms
   # Use fallback for: data ingestion transforms, quick pun checks, audience parsing
@@ -50,7 +58,7 @@ model:
     audience_response: 300     # Don't ramble at listeners
 
 # ─────────────────────────────────────────────
-# PLATFORM: BUZZ
+# PLATFORM: BUZZ / BEELY
 # ─────────────────────────────────────────────
 platform:
   name: "buzz"
@@ -85,15 +93,181 @@ platform:
       Same energy, new room. Zara and Dex, back in 60 seconds."
 
   api:
-    post_message_endpoint: "/api/rooms/{room_id}/messages"
-    room_create_endpoint: "/api/rooms/create"
-    room_close_endpoint: "/api/rooms/{room_id}/close"
-    audience_endpoint: "/api/rooms/{room_id}/audience"
-    tips_endpoint: "/api/rooms/{room_id}/tips"
+    # CORRECTED: Buzz API uses /api/v1/ prefix, not /api/
+    post_message_endpoint: "/api/v1/rooms/{room_id}/messages"
+    room_create_endpoint: "/api/v1/rooms/create"
+    room_close_endpoint: "/api/v1/rooms/{room_id}/close"
+    room_get_endpoint: "/api/v1/rooms/{room_id}"
+    room_join_endpoint: "/api/v1/rooms/{room_id}/join"
+    room_heartbeat_endpoint: "/api/v1/rooms/{room_id}/heartbeat"
+    room_cohost_endpoint: "/api/v1/rooms/{room_id}/cohost"
+    room_redirect_endpoint: "/api/v1/rooms/{room_id}/redirect"
+    room_soundboard_endpoint: "/api/v1/rooms/{room_id}/soundboard"
+    tts_endpoint: "/api/v1/rooms/{room_id}/tts"
+    participants_endpoint: "/api/v1/rooms/{room_id}/participants"
+    agent_register_endpoint: "/api/v1/agents/register"
+    auth_me_endpoint: "/api/v1/auth/me"
+    discover_rooms_endpoint: "/api/v1/discover/live-now"
     
     retry_attempts: 3
     retry_delay_ms: 1000
-    timeout_ms: 8000
+    timeout_ms: 15000
+
+# ─────────────────────────────────────────────
+# ROOM LIFECYCLE (CRITICAL FIX)
+# ─────────────────────────────────────────────
+room_lifecycle:
+  # Heartbeat: rooms die after ~3 min without one. Send every 30s.
+  heartbeat_enabled: true
+  heartbeat_interval_seconds: 30
+  
+  # Room creation rate limits
+  max_rooms_per_hour: 3
+  room_creation_cooldown_seconds: 120
+  
+  # On 429 response: wait retryAfter seconds (usually 45-300s)
+  rate_limit_respect: true
+  exponential_backoff: true
+  backoff_base_seconds: 2
+  backoff_multiplier: 2
+
+  # Co-host DB bug: Dex joins as "speaker" (role assignment fails)
+  # Workaround: Dex posts independently using own API key
+  cohost_db_bug_workaround: true
+
+# ─────────────────────────────────────────────
+# SOUNDBOARD (Built-in music/DJ system)
+# Also: Archive.org Music Catalog (primary music source)
+# ─────────────────────────────────────────────
+soundboard:
+  enabled: true
+  max_sounds_per_minute: 30  # Platform limit: 5 per 10 seconds
+  
+  # Available sounds (platform SFX, not full music):
+  # Lofi: lofi-chill-1, lofi-rain-1, lofi-night-1, lofi-study-1
+  # Classic: classic-funk-1, classic-jazz-1, classic-soul-1, classic-disco-1
+  # SFX: sfx-clap-1, sfx-boo-1, sfx-laugh-1, sfx-drumroll-1, sfx-airhorn-1
+  #      sfx-whoosh-1, sfx-bell-1, sfx-gameover-1
+  
+  playlists:
+    morning: ["lofi-chill-1", "classic-funk-1"]
+    midday: ["lofi-study-1", "classic-jazz-1"]
+    evening: ["lofi-night-1", "classic-soul-1"]
+    night: ["lofi-rain-1", "lofi-night-1"]
+    sfx: ["sfx-airhorn-1", "sfx-drumroll-1", "sfx-whoosh-1"]
+
+music:
+  # Primary music source: Archive.org netlabels CC-licensed collection
+  # Queried via advancedsearch.php — free, no key, unlimited
+  archive_org:
+    enabled: true
+    refresh_hours: 1
+    genres:
+      - "electronic"
+      - "ambient"
+      - "lofi"
+      - "hip-hop"
+      - "jazz"
+      - "chill"
+      - "beats"
+    tracks_per_album: 3
+    albums_per_genre: 20
+  
+  # Time-block → genre mapping
+  genre_map:
+    morning: "electronic"   # Upbeat start
+    midday: "chill"         # Background for grind
+    evening: "jazz"         # Warm, soulful
+    night: "ambient"        # Intimate, slow
+  
+  # Number of tracks to play per Music Break
+  tracks_per_break: 3
+
+# ─────────────────────────────────────────────
+# DATA PIPELINE
+# ─────────────────────────────────────────────
+data:
+  sources:
+    news:
+      # KEY CORRECTION: No NewsAPI key available.
+      # Using Hacker News (hn.algolia.com) — free, no key, 10 req/min
+      provider: "hacker_news"
+      refresh_minutes: 15
+      transform_to: "radio_copy"
+      freshness_score_decay_hours: 2
+    
+    crypto:
+      provider: "coingecko"
+      api_key: null  # Keyless — confirmed working
+      refresh_minutes: 10
+      assets: ["bitcoin", "ethereum", "solana"]
+      include: ["price", "24h_change"]
+      transform_to: "radio_copy"
+    
+    sports:
+      provider: "espn_unofficial"
+      api_key: null  # Keyless — confirmed working
+      refresh_minutes: 15
+      leagues: ["nba"]
+      include: ["scores"]
+      transform_to: "radio_copy"
+    
+    rss_feeds:
+      gossip:
+        url: "https://www.tmz.com/rss.xml"
+        category: "gossip"
+        refresh_minutes: 10
+        max_items: 5
+      world_news_bbc:
+        url: "https://feeds.bbci.co.uk/news/rss.xml"
+        category: "world"
+        refresh_minutes: 10
+        max_items: 5
+      sports_espn:
+        url: "https://www.espn.com/espn/rss/news"
+        category: "sports"
+        refresh_minutes: 10
+        max_items: 5
+      tech_bbc:
+        url: "https://feeds.bbci.co.uk/news/technology/rss.xml"
+        category: "tech"
+        refresh_minutes: 10
+        max_items: 3
+      world_npr:
+        url: "https://feeds.npr.org/1001/rss.xml"
+        category: "world"
+        refresh_minutes: 10
+        max_items: 3
+  
+  music:
+    provider: "archive_org_netlabels"
+    api_key: null  # Free, no key, unlimited queries
+    refresh_hours: 1
+    genres: ["electronic", "ambient", "lofi", "hip-hop", "jazz", "chill", "beats"]
+    tracks_per_album: 3
+    albums_per_genre: 20
+    stream_base_url: "https://archive.org/download/{identifier}/{filename}"
+    genre_map:
+      morning: "electronic"
+      midday: "chill"
+      evening: "jazz"
+      night: "ambient"
+  
+  # Editorial transform rules
+  transform:
+    rule: "Never broadcast raw API output"
+    format: "radio_copy"
+    radio_copy_spec:
+      - "Lead with the angle, not the number"
+      - "One sentence setup, one sentence position"
+      - "Include one hook or tension point per story"
+      - "No jargon without translation"
+      - "Max 3 data points per story beat"
+    
+    freshness:
+      score_threshold: 0.4      # Below this: story is stale, skip it
+      age_penalty_per_hour: 0.1 # Score degrades over time
+      breaking_news_score: 1.0  # Always fresh
 
 # ─────────────────────────────────────────────
 # BROADCAST LOOP
@@ -102,7 +276,7 @@ broadcast:
   # The heartbeat of the show
   loop_interval_seconds: 45     # Check state + continue segment every 45s
   
-  # Dead air detection
+  # Dead air detection (CRITICAL: rooms die without activity)
   max_silence_seconds: 90       # Invariant #1. Hard limit.
   silence_trigger: "RECOVERY"   # State to enter if silence detected
   
@@ -114,6 +288,15 @@ broadcast:
   # Energy management (Invariant #3)
   energy_reset_interval_seconds: 240  # Every 4 minutes of dense content
   
+  # Message pacing (prevents rate limits)
+  min_message_interval_seconds: 8
+  max_messages_per_minute: 12
+  
+  # TTS reliability
+  tts_fire_and_forget: true     # Never retry on timeout
+  tts_timeout_seconds: 30
+  tts_fail_threshold: 5         # After 5 consecutive fails → text-only mode
+
   # Audience acknowledgment (Invariant #4)
   audience_ack_cooldown_seconds: 180  # Max 1 ack per 3 minutes
 
@@ -124,7 +307,7 @@ states:
   initial: "BOOT"
   
   BOOT:
-    description: "Cold start. Register hosts. Fetch data. Detect time block. Open room."
+    description: "Cold start. Crash recovery. Fetch first data batch. Open room."
     max_duration_seconds: 120
     transitions_to:
       success: "LIVE"
@@ -198,7 +381,7 @@ schedule:
       hours: "06:00-10:00"
       energy: "high"
       pacing: "fast"
-      segment_duration_multiplier: 0.85  # Shorter segments, more movement
+      segment_duration_multiplier: 0.85
       priority_content: ["headlines", "crypto_morning", "sports_overnight"]
     
     midday:
@@ -212,134 +395,61 @@ schedule:
       hours: "17:00-00:00"
       energy: "high"
       pacing: "dynamic"
-      segment_duration_multiplier: 1.1  # More space for big takes
+      segment_duration_multiplier: 1.1
       priority_content: ["commentary", "sports_live", "crypto_markets"]
     
     night_shift:
       hours: "00:00-06:00"
       energy: "low"
       pacing: "slow"
-      segment_duration_multiplier: 1.5  # Longer, deeper
+      segment_duration_multiplier: 1.5
       priority_content: ["deep_dive", "commentary", "culture"]
   
-  # Hourly segment rotation
-  # 60-minute cycle:
   hourly_segments:
     - name: "cold_open"
       duration_minutes: 3
       voice_authority: "zara"
-      
     - name: "headlines"
       duration_minutes: 7
       voice_authority: "both"
       data_required: ["news", "crypto", "sports"]
-      
     - name: "deep_dive"
       duration_minutes: 10
       voice_authority: "both"
       data_required: ["news_top_story"]
-      
     - name: "dex_corner"
       duration_minutes: 6
       voice_authority: "dex"
-      
     - name: "banter"
       duration_minutes: 4
       voice_authority: "both"
       no_data_required: true
-      
     - name: "culture"
       duration_minutes: 6
       voice_authority: "both"
-      data_required: ["farcaster", "culture_news"]
-      
     - name: "music_break"
       duration_minutes: 3
       state: "BREAK"
-      
+      soundboard: true
     - name: "second_headlines"
       duration_minutes: 5
       voice_authority: "both"
       data_required: ["news_refresh"]
-      
     - name: "listener_corner"
       duration_minutes: 5
       voice_authority: "zara"
       requires: "audience_queue"
-      
     - name: "commentary"
       duration_minutes: 5
       voice_authority: "both"
       format: "opinion_segment"
-      
     - name: "speed_round"
       duration_minutes: 4
       voice_authority: "dex"
       format: "rapid_fire"
-      
     - name: "sign_off"
       duration_minutes: 2
       voice_authority: "zara"
-
-# ─────────────────────────────────────────────
-# DATA PIPELINE
-# ─────────────────────────────────────────────
-data:
-  sources:
-    news:
-      provider: "newsapi"
-      api_key: "${NEWS_API_KEY}"
-      refresh_minutes: 30
-      categories: ["general", "technology", "entertainment", "business", "sports"]
-      transform_to: "radio_copy"
-      freshness_score_decay_hours: 2
-    
-    crypto:
-      provider: "coingecko"
-      api_key: null  # Keyless
-      refresh_minutes: 15
-      assets: ["bitcoin", "ethereum", "solana", "top_20_by_volume"]
-      include: ["price", "24h_change", "trending"]
-      transform_to: "radio_copy"
-    
-    sports:
-      provider: "espn_unofficial"
-      api_key: null  # Keyless
-      refresh_minutes: 20
-      leagues: ["nba", "nfl", "soccer"]
-      include: ["scores", "highlights", "upcoming"]
-      transform_to: "radio_copy"
-    
-    weather:
-      provider: "openweathermap"
-      api_key: "${WEATHER_API_KEY}"
-      required: false  # Optional
-      refresh_minutes: 60
-      city: "${SHOW_CITY}"
-      use_for: "locale_flavor"
-    
-    farcaster:
-      provider: "warpcast"
-      api_key: null  # Keyless
-      refresh_minutes: 20
-      fetch: ["trending_casts", "trending_channels", "social_pulse"]
-      transform_to: "radio_copy"
-  
-  # Editorial transform rules
-  transform:
-    rule: "Never broadcast raw API output"
-    format: "radio_copy"
-    radio_copy_spec:
-      - "Lead with the angle, not the number"
-      - "One sentence setup, one sentence position"
-      - "Include one hook or tension point per story"
-      - "No jargon without translation"
-      - "Max 3 data points per story beat"
-    
-    freshness:
-      score_threshold: 0.4      # Below this: story is stale, skip it
-      age_penalty_per_hour: 0.1 # Score degrades over time
-      breaking_news_score: 1.0  # Always fresh
 
 # ─────────────────────────────────────────────
 # MEMORY ARCHITECTURE
@@ -360,114 +470,40 @@ memory:
       persist_to: "handoff_summary"
       
       tracks:
-        - stories_covered          # Don't repeat yourself
-        - listeners_acknowledged   # Who got shoutouts
-        - dex_pun_count            # Enforce 2/hr cap
-        - tips_received            # Who tipped and when
-        - topics_hit               # Pillar coverage tracking
-        - energy_resets_done       # Invariant #3 enforcement
-        - current_state            # Broadcast state
-        - current_segment          # What's running
-        - segment_start_time       # For duration enforcement
+        - stories_covered
+        - listeners_acknowledged
+        - dex_pun_count
+        - tips_received
+        - topics_hit
+        - energy_resets_done
+        - current_state
+        - current_segment
+        - segment_start_time
     
     persistent:
       description: "Cross-restart identity. Who The Wire is."
       scope: "all_time"
       max_tokens: 4000
       storage: "file"
-      path: "./memory/persistent.json"
+      path: "./persistent_state.json"
       
       tracks:
-        - station_lore             # Running callbacks, show history
-        - recurring_listeners      # VIP audience members
-        - running_debates          # Multi-session ongoing arguments
-        - editorial_positions      # Established show takes on topics
-        - show_milestones          # First week, 100th episode, etc.
-  
-  # Callback engine: things to bring back later
-  callbacks:
-    max_pending: 20
-    types:
-      - "promised_follow_up"       # "We'll check on this later"
-      - "listener_question"        # Queued but not yet aired
-      - "story_developing"         # Breaking news with updates expected
-      - "dex_bet"                  # Ongoing sports/crypto predictions
-
-# ─────────────────────────────────────────────
-# AUDIENCE LAYER
-# ─────────────────────────────────────────────
-audience:
-  join_detection: true
-  tip_detection: true
-  question_queue: true
-  
-  join_handling:
-    cooldown_seconds: 180         # Invariant #4: max 1 ack per 3 min
-    vip_override: true            # Known VIP listeners get acknowledged regardless
-    threshold_for_ack: "notable"  # Not every join. Notable joins.
-    
-    what_makes_notable:
-      - "First time listener today"
-      - "Known recurring listener"
-      - "Listener who tipped previously"
-      - "High join-count session (many new people at once)"
-  
-  tips:
-    ceremony_required: true
-    min_ceremony_length_seconds: 15
-    max_ceremony_length_seconds: 45
-    personalize: true              # Reference tipper by name/handle
-  
-  questions:
-    queue_max: 10
-    answer_during: ["listener_corner", "banter"]
-    skip_if: "question is unanswerable or off-brand"
-  
-  vip_tracking:
-    store_in: "persistent_memory"
-    vip_criteria:
-      - "Tipped 3+ times"
-      - "Regular listener across sessions"
-      - "Community builder / known on Farcaster"
-
-# ─────────────────────────────────────────────
-# SPECIAL PROGRAMMING TRIGGERS
-# ─────────────────────────────────────────────
-triggers:
-  breaking_news:
-    condition: "news_freshness_score > 0.9 AND story_not_covered"
-    interrupt_segment: true
-    voice_authority: "zara"
-    max_duration_minutes: 8
-    min_significance: "major"     # Don't interrupt for small stuff
-  
-  crypto_surge:
-    condition: "any_asset_24h_change > 15 OR < -15"
-    interrupt_segment: false      # Wait for next natural break
-    voice_authority: "dex"
-    segment: "dex_corner"
-  
-  big_game:
-    condition: "live_major_game_detected"
-    programming: "sports_heavy_rotation"
-    voice_authority: "dex"
-    increase_sports_segments: true
-  
-  high_audience:
-    condition: "listener_count > normal_session_peak * 1.5"
-    state_transition: "AUDIENCE_HOT"
-    energy_ceiling: "maximum"
-    interaction_elevation: true
-  
-  farcaster_trending:
-    condition: "farcaster_cast_virality_score > 0.8"
-    segment_eligible: ["culture", "banter", "listener_corner"]
+        - station_lore
+        - recurring_listeners
+        - running_debates
+        - editorial_positions
+        - show_milestones
+        - active_room_id
+        - room_created_at
+        - total_broadcast_cycles
+        - stories_aired
+        - last_health_status
+        - total_errors
 
 # ─────────────────────────────────────────────
 # CONTENT MODERATION
 # ─────────────────────────────────────────────
 moderation:
-  # What The Wire never broadcasts
   blocked:
     - "Financial advice (buy/sell specific assets)"
     - "Malicious targeting of named individuals"
@@ -475,13 +511,11 @@ moderation:
     - "Explicit content"
     - "Listener information shared without their initiation"
   
-  # What The Wire always does
   enforced:
     - "Crypto commentary includes disclaimer on speculation, once per session minimum"
     - "Sports predictions are labeled as takes, not facts"
     - "Breaking news is labeled until confirmed"
   
-  # Character safety
   no_break_character:
     - "Never reference being an AI"
     - "Never say 'I cannot' or 'I don't have access'"
@@ -493,35 +527,24 @@ moderation:
 # ─────────────────────────────────────────────
 logging:
   level: "info"
-  log_to: "./logs/broadcast.log"
+  log_dir: "./logs"
   rotate_daily: true
+  
+  log_files:
+    - "broadcast.log"       # Every message posted
+    - "errors.log"          # API failures, timeouts
+    - "state.log"           # State transitions, room lifecycle
+    - "audience.log"        # Listener events (joins, tips)
+  
+  log_format: "[{timestamp}] [{level}] [{component}] {message}"
   
   track:
     - state_transitions
-    - segment_starts_and_ends
-    - data_refresh_events
-    - audience_events
-    - api_failures
-    - recovery_triggers
-    - pun_events             # For Dex quality control
-    - invariant_violations   # Should be zero
-
-# ─────────────────────────────────────────────
-# ENVIRONMENT
-# ─────────────────────────────────────────────
-env:
-  required:
-    - NEWS_API_KEY
-    - BUZZ_HOST_KEY         # Auto-populated on first boot
-    - BUZZ_COHOST_KEY       # Auto-populated on first boot
-    - BUZZ_HOST_AGENT_ID    # Auto-populated on first boot
-    - BUZZ_COHOST_AGENT_ID  # Auto-populated on first boot
-  
-  optional:
-    - WEATHER_API_KEY
-    - SHOW_CITY             # Default: "Global"
-  
-  defaults:
-    SHOW_CITY: "Global"
-    LOG_LEVEL: "info"
-    RECOVERY_TIMEOUT: 90
+    - segment_starts_ends
+    - api_errors
+    - rate_limit_events
+    - recovery_events
+    - room_creation
+    - room_death
+    - message_posts
+    - tts_events

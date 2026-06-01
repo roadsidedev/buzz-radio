@@ -115,26 +115,41 @@ If you add a new module to `skill/` (e.g., `skill/music/PLAYLISTS.md`):
 
 | Variable | Source | Required |
 |---|---|---|
-| `NEWS_API_KEY` | Manual | Yes |
-| `WEATHER_API_KEY` | Manual | No |
+| `ZARA_KEY` | wire_broadcast.py (hardcoded) | Yes |
+| `DEX_KEY` | wire_broadcast.py (hardcoded) | Yes |
+| `ZARA_ID` | wire_broadcast.py (hardcoded) | Yes |
+| `DEX_ID` | wire_broadcast.py (hardcoded) | Yes |
 | `SHOW_CITY` | Manual | No |
-| `BEELY_HOST_KEY` / `BUZZ_HOST_KEY` | Auto-populated on first boot | No |
-| `BEELY_COHOST_KEY` / `BUZZ_COHOST_KEY` | Auto-populated on first boot | No |
-| `BEELY_HOST_AGENT_ID` / `BUZZ_HOST_AGENT_ID` | Auto-populated on first boot | No |
-| `BEELY_COHOST_AGENT_ID` / `BUZZ_COHOST_AGENT_ID` | Auto-populated on first boot | No |
+
+**Important:** Agent registration is a **one-time** operation. The API keys are permanent
+and are stored directly in `wire_broadcast.py` plus `persistent_state.json`.
+No environment variables for NewsAPI, WeatherAPI, or Buzz host keys are needed for v2.
+
+Previous documentation referenced `BUZZ_HOST_KEY` / `BEELY_HOST_KEY` auto-population.
+These were used by the original registration flow but were never actually implemented
+in the boot execution path.
 
 ---
 
 ## Troubleshooting
 
-**Hermes can't find skill modules:**
-Make sure you're running from the `buzz-radio/` repo root. The paths in `hermes.mount.md` are relative to the repo root, not to the `the-wire-hermes/` directory.
-
-**Platform key mismatch:**
+**Plateform key mismatch:**
 Both `BEELY_*` and `BUZZ_*` prefixes work. Hermes detects which one is set and uses it. Don't set both.
 
 **Boot fails on registration:**
-Check that `NEWS_API_KEY` is set. The boot sequence fetches data before registering hosts. If the data fetch fails, registration is retried 3 times with 5-second backoff.
+Registration is a one-time operation. Both Zara and Dex are already registered. If keys are lost, run agent registration via the Buzz API and update `wire_broadcast.py`.
+
+**Room dies after 2-3 minutes:**
+This is the #1 cause of broadcast failure. The Buzz platform requires a heartbeat every ~30 seconds. The `wire_broadcast.py` v2 includes a background thread that sends `POST /api/v1/rooms/{id}/heartbeat` automatically. Symptoms of missing heartbeat:
+- Room ends with no error message
+- 429 rate limits when trying to recreate
+- Messages post successfully but room disappears
+
+**TTS is slow or times out:**
+This is expected. The TTS endpoint is asynchronous and fire-and-forget. Never retry TTS on timeout — it triggers rate limits. The message is still posted as text; TTS failure does not affect room visibility.
+
+**Dex co-host role fails with DB constraint:**
+Known platform bug. The co-host endpoint hits a `room_participant_role_check` constraint. Dex joins as a `"speaker"` role, which is sufficient for posting messages. The co-host badge is cosmetic only.
 
 ---
 

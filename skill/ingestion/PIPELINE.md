@@ -24,35 +24,92 @@ Raw data in. Radio-ready content out.
 
 ### 1. News
 
+As of v2 of The Wire, **Hacker News is the primary news source** (free, keyless).
+NewsAPI requires a paid API key and is no longer used.
+
 ```python
 NEWS_SOURCES = {
-    "top": {
-        "url": "https://newsapi.org/v2/top-headlines?country=us&pageSize=10&apiKey={NEWS_API_KEY}",
-        "refresh": 1800,   # 30 min
-        "priority": "high"
+    "hacker_news": {
+        "url": "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=10",
+        "refresh": 900,    # 15 min
+        "priority": "high",
+        "notes": "Free, keyless, 10 req/min. Returns top HN stories with points."
+    },
+}
+
+# Transform: HN hit → radio_copy
+def hn_transform(hit):
+    return {
+        "headline": hit.get("title", "")[:80],
+        "radio_copy": f"So here's what happened — {hit.get('title', '').split('(')[0].strip()}",
+        "energy": "important" if hit.get("points", 0) > 100 else "medium",
+        "impact": "high" if hit.get("points", 0) > 200 else "medium",
+    }
+```
+
+> **Previous approach (deprecated):** NewsAPI (`newsapi.org`) was the original spec'd source.
+> It requires a paid API key and was never wired up in practice. The Hacker News Algolia API
+> provides fresh tech/startup news with no authentication.
+
+### 6. RSS News Feeds (Free, Keyless)
+
+Since v2.1, The Wire uses RSS feeds for world news, gossip, and deeper sports coverage:
+
+```python
+RSS_SOURCES = {
+    "world_news": {
+        "urls": [
+            "https://feeds.bbci.co.uk/news/rss.xml",      # BBC News
+            "https://feeds.npr.org/1001/rss.xml",           # NPR
+            "https://www.theguardian.com/world/rss",        # The Guardian
+        ],
+        "refresh": 600,      # 10 min
+        "category": "world"
+    },
+    "sports": {
+        "url": "https://www.espn.com/espn/rss/news",       # ESPN RSS
+        "refresh": 600,
+        "category": "sports"
+    },
+    "gossip": {
+        "url": "https://www.tmz.com/rss.xml",               # TMZ celebrity news
+        "refresh": 600,
+        "category": "gossip"
     },
     "tech": {
-        "url": "https://newsapi.org/v2/top-headlines?category=technology&pageSize=5&apiKey={NEWS_API_KEY}",
-        "refresh": 1800,
-        "priority": "medium"
+        "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+        "refresh": 600,
+        "category": "tech"
     },
-    "entertainment": {
-        "url": "https://newsapi.org/v2/top-headlines?category=entertainment&pageSize=5&apiKey={NEWS_API_KEY}",
-        "refresh": 2400,
-        "priority": "medium"
-    },
-    "sports_news": {
-        "url": "https://newsapi.org/v2/top-headlines?category=sports&pageSize=5&apiKey={NEWS_API_KEY}",
-        "refresh": 1200,
-        "priority": "medium"
-    },
-    "business": {
-        "url": "https://newsapi.org/v2/top-headlines?category=business&pageSize=5&apiKey={NEWS_API_KEY}",
-        "refresh": 1800,
-        "priority": "medium"
-    }
 }
 ```
+
+Items are categorized and deduplicated, with capped caches per category.
+
+### 7. Music Pipeline (Archive.org Netlabels)
+
+The music catalog is built dynamically from the Internet Archive's netlabels collection:
+
+```python
+MUSIC_GENRES = [
+    "electronic", "ambient", "lofi", "hip-hop",
+    "jazz", "chill/downtempo", "beats"
+]
+
+def build_catalog():
+    # 1. Search advancedsearch.php per genre → get album identifiers
+    # 2. Fetch /metadata/{id} for each → find VBR MP3 filenames
+    # 3. Return playable URLs: https://archive.org/download/{id}/{filename}
+
+    genre_map = {
+        "morning": "electronic",   # Upbeat start
+        "midday":  "chill",         # Background for grind
+        "evening": "jazz",          # Warm, soulful
+        "night":   "ambient",       # Intimate, slow
+    }
+```
+
+Source: `https://archive.org/advancedsearch.php` (no auth, unlimited queries)
 
 ### 2. Crypto (keyless)
 

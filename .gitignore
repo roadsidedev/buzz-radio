@@ -37,3 +37,15 @@ logs/
 # Temp
 tmp/
 .tmp/
+
+# The Wire runtime artifacts
+persistent_state.json
+.beely_creds.json
+music_cache/
+*.log
+logs/
+IMPLEMENTATION_REPORT.md
+IMPROVEMENT_REPORT.md
+PLATFORM_INTEGRATION_REPORT.md
+DEBUG_REFERENCE.md
+start_broadcast.py

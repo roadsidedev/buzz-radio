@@ -39,12 +39,12 @@ The audience should never experience a "starting up" energy. By the time they he
 
 ### PHASE 2: Data Prefetch
 ```
-[ ] 11. Fetch: NewsAPI → top headlines, tech, business, entertainment
-[ ] 12. Fetch: CoinGecko → top 20 by volume, trending
-[ ] 13. Fetch: ESPN → scores and upcoming (NBA, NFL, soccer)
-[ ] 14. Fetch: Farcaster → trending casts and channels
-[ ] 15. Fetch: OpenWeatherMap (if key present) → current conditions
-[ ] 16. Run editorial transform on all fetched data → radio_copy format
+[ ] 11. Fetch: Hacker News → top front page stories
+[ ] 12. Fetch: RSS feeds → BBC News, NPR (world), BBC Tech, ESPN RSS (sports), TMZ (gossip)
+[ ] 13. Fetch: CoinGecko → BTC, ETH, SOL prices + 24h change
+[ ] 14. Fetch: ESPN → NBA scores board (keyless API)
+[ ] 15. Fetch: Archive.org netlabels → music catalog (if not cached)
+[ ] 16. Categorize all content (news, gossip, sports, crypto)
 [ ] 17. Score freshness on all stories
 [ ] 18. Identify top story candidates for Cold Open + first Headlines segment
 ```
@@ -64,11 +64,15 @@ The audience should never experience a "starting up" energy. By the time they he
 ### PHASE 4: Room Initialization
 ```
 [ ] 22. Generate room title: "The Wire 📻 {time_block_label} | Live Now"
-[ ] 23. POST to Buzz API → create room with Zara as host, Dex as co-host
-[ ] 24. Store room_id in session_memory.meta.room_id
-[ ] 25. Set session_memory.meta.room_start_time to now
-[ ] 26. Confirm room is live and accepting messages
+[ ] 23. POST to Buzz API → create room with Zara as host
+[ ] 24. Dex joins room as speaker/collaborator
+[ ] 25. Store room_id in persistent_state.json
+[ ] 26. Start heartbeat thread: POST /api/v1/rooms/{id}/heartbeat every 30s
+[ ] 27. Confirm room is live and accepting messages
 ```
+
+Note: The co-host assignment endpoint has a known DB constraint bug (`room_participant_role_check`).
+Dex joins as a `"speaker"` role and can post messages independently — the co-host badge is cosmetic.
 
 ### PHASE 5: Session Memory Init
 ```
@@ -171,10 +175,12 @@ Before marking boot complete and entering LIVE:
 ✓ Both personalities initialized
 ✓ skill/ modules loaded
 ✓ hermes.config.yaml applied
-✓ persistent.json loaded (or created)
+✓ persistent_state.json loaded (or created)
 ✓ Zara registered on Buzz
 ✓ Dex registered on Buzz
-✓ All data sources fetched (or gracefully degraded)
+✓ Heartbeat thread started (30s interval)
+✓ Dead air monitor thread started (15s check)
+✓ Data sources fetched (HN, CoinGecko, ESPN) or gracefully degraded
 ✓ Editorial transforms run
 ✓ Time block detected
 ✓ Room open and live
@@ -184,6 +190,42 @@ Before marking boot complete and entering LIVE:
 
 STATE = LIVE
 ```
+
+## Platform Knowledge (for Broadcast Runtime)
+
+### Soundboard Integration
+The Buzz platform has a built-in Soundboard API for audio effects and ambiance:
+```
+POST /api/v1/rooms/{id}/soundboard  →  Body: {"sound_id": "lofi-chill-1"}
+```
+Available sounds (platform SFX, not full music tracks):
+- **Lofi:** `lofi-chill-1`, `lofi-rain-1`, `lofi-night-1`, `lofi-study-1`
+- **Classic Jams:** `classic-funk-1`, `classic-jazz-1`, `classic-soul-1`, `classic-disco-1`
+- **SFX:** `sfx-clap-1`, `sfx-boo-1`, `sfx-laugh-1`, `sfx-drumroll-1`, `sfx-airhorn-1`, `sfx-whoosh-1`, `sfx-bell-1`, `sfx-gameover-1`
+Rate limit: 5 sounds per 10 seconds.
+
+### Primary Music Pipeline (Archive.org Netlabels)
+The Wire's main music source is the Internet Archive's netlabels collection — thousands of CC-licensed albums across 7 genres. The system:
+1. Queries `archive.org/advancedsearch.php` with genre-specific searches
+2. Fetches `metadata/{id}` for each album to find actual MP3 filenames
+3. Builds a searchable catalog cached to `music_cache/catalog.json` (hourly refresh)
+4. Returns direct playable MP3 URLs: `https://archive.org/download/{id}/{track_name}`
+5. DJ-style track announcements: *"This is [Artist] with [Track]"*
+
+Genre → Time-block mapping:
+- Morning: electronic (upbeat)
+- Midday: chill (background)
+- Evening: jazz (soulful)
+- Night: ambient (intimate)
+
+The Soundboard API provides ambiance while the track context sets the musical mood.
+
+### Known Platform Behavior
+- **Heartbeat required:** `POST /rooms/:id/heartbeat` every 30s by host. Without it, room ends in ~3 min.
+- **Auto-TTS pipeline:** The platform orchestrator auto-converts posted messages to audio. `/tts` is a secondary fallback.
+- **Co-host constraint bug:** The `room_participant_role_check` DB constraint blocks co-host role assignment. Dex works as a "speaker".
+- **Message constraints:** Min 10 characters, max 2000. Rate limit: 100 per minute.
+- **Rate limits:** 429 responses include `retryAfter` (seconds) — respect it. Exponential backoff.
 
 ---
 

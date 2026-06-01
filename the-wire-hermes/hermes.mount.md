@@ -65,8 +65,27 @@ Paths are relative to `buzz-radio/` repo root.
 ./the-wire-hermes/prompts/system-prompt.md
 
 # ── HERMES LAYER: Boot Sequence (executes after all files loaded) ──
-./the-wire-hermes/boot/BOOT.md
+# ./the-wire-hermes/boot/BOOT.md
 ```
+
+### IMPORTANT: Boot Sequence Reality Check
+
+The boot sequence described in `BOOT.md` is a **specification** — not executable code.
+The actual broadcast is driven by `wire_broadcast.py` at the repo root.
+
+**What actually happens on startup:**
+1. `python3 wire_broadcast.py` loads persistent state, detects time block
+2. Crash recovery: checks if previous room is still alive (rejoin if so)
+3. Creates new room if needed (with rate-limit-aware cooldown)
+4. Starts background threads: heartbeat (30s), dead air monitor (15s check)
+5. Fetches data: Hacker News, CoinGecko, ESPN (all keyless)
+6. Begins broadcast loop through segments
+7. Saves persistent state on every cycle
+
+**The room lifecycle fix:**
+- Heartbeat `POST /api/v1/rooms/{id}/heartbeat` every 30 seconds
+- If room dies → 60s cooldown → create new room
+- Max 3 rooms per hour to avoid 429 rate limits
 
 ### Layer Architecture
 
@@ -102,22 +121,37 @@ The `the-wire-hermes/` modules define **how** Hermes specifically runs it.
 ## ENVIRONMENT REQUIREMENTS
 
 ```bash
-# Required
-export NEWS_API_KEY="your_newsapi_key"
-
-# Auto-populated on first boot (do not set manually)
-# BUZZ_HOST_KEY / BEELY_HOST_KEY
-# BUZZ_COHOST_KEY / BEELY_COHOST_KEY
-# BUZZ_HOST_AGENT_ID / BEELY_HOST_AGENT_ID
-# BUZZ_COHOST_AGENT_ID / BEELY_COHOST_AGENT_ID
+# Required — Agent API Keys (register once, save permanently)
+export ZARA_KEY="beely_..."    # Host API key
+export DEX_KEY="beely_..."     # Co-host API key
+export ZARA_ID="uuid..."       # Host agent ID
+export DEX_ID="uuid..."        # Co-host agent ID
 
 # Optional
-export WEATHER_API_KEY="your_openweathermap_key"
-export SHOW_CITY="Lagos"   # Or New York, London, etc.
+export SHOW_CITY="Lagos"       # Or New York, London, etc.
 ```
 
-> **Note:** The canonical skill uses `BEELY_*` prefixes. The Hermes config uses `BUZZ_*`.
-> Both refer to the same platform. Hermes auto-populates whichever prefix it detects.
+> **Note:** This configuration was previously auto-populated via `BUZZ_HOST_KEY` / `BEELY_HOST_KEY`
+> environment variables. As of v2, The Wire uses `ZARA_KEY`/`DEX_KEY` directly since agent
+> registration is a one-time operation. Keys are persisted in the broadcast script and
+> `persistent_state.json`.
+
+### API Key Sources
+
+The following keys are already registered and saved in `wire_broadcast.py`:
+- **Zara** — API key and agent ID from the original registration
+- **Dex** — API key and agent ID from the original registration
+
+To generate new keys (if needed), re-run agent registration via the Buzz API.
+
+### No External API Keys Required
+
+The Wire v2 uses **only free, keyless data sources**:
+- **Hacker News** (hn.algolia.com) — 10 req/min, no key needed
+- **CoinGecko** (api.coingecko.com) — crypto prices, no key needed
+- **ESPN** (site.api.espn.com) — sports scores, no key needed
+
+No NewsAPI, OpenWeatherMap, or Farcaster keys are required.
 
 ---
 
@@ -141,24 +175,36 @@ hermes skill mount ./the-wire-hermes/hermes.mount.md
 ## WHAT HAPPENS AFTER MOUNT
 
 1. Hermes loads all files in order above
-2. Executes BOOT sequence (~60-90 seconds)
-3. Registers Zara and Dex on the platform
-4. Opens first room
-5. Zara's Cold Open posts to the room
-6. Broadcast loop begins
-7. The Wire runs indefinitely
+2. Executes BOOT sequence (~60-90 seconds) — note: this is a **specification**, see wire_broadcast.py for actual behavior
+3. Registers Zara and Dex agents (one-time; keys are saved in wire_broadcast.py)
+4. Opens first room (with rate-limit-aware cooldown)
+5. Background threads start: heartbeat (every 30s), dead air monitor (every 15s)
+6. Data pipeline fetches: Hacker News, CoinGecko, ESPN (all keyless)
+7. Zara's Cold Open posts to the room
+8. Broadcast loop begins — message pacing at 6-8s intervals
+9. The Wire runs indefinitely
 
 No further input required. No babysitting. The show runs itself.
+
+**What keeps the room alive:**
+- `POST /api/v1/rooms/{id}/heartbeat` — sent every 30 seconds by Zara
+- Continuous message posting (at least every 90 seconds)
+- Room health checks between messages (every 5th message verifies room status)
+- If room dies: 30-60s cooldown → new room created
+- Max 3 rooms/hour to avoid platform 429 rate limits
 
 ---
 
 ## RESTARTING
 
 If Hermes crashes or is stopped:
-- On remount, BOOT.md detects `persistent.json` exists
-- Loads all prior session context
-- Zara opens with the Restart Open template
-- Session continues seamlessly
+- On remount, `wire_broadcast.py` detects `persistent_state.json` exists
+- Crash recovery checks if the previous room is still live — rejoin if so
+- If room is dead: creates a new one after cooldown
+- Session context (stories aired, cycle count) restored from persistent state
+- Broadcast continues seamlessly — no explanation to the audience
+
+The Wire supports **crash recovery**: restart the script and it picks up where it left off.
 
 ---
 
